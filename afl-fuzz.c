@@ -262,12 +262,20 @@ struct queue_entry {
   struct queue_entry *next,           /* Next element, if any             */
                      *next_100;       /* 100 elements ahead               */
 
+  /*new implementation 20180109 */
+  struct queue_entry *parent;
+  int pheromone;
 };
 
 static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top, /* Top of the list                  */
                           *q_prev100; /* Previous 100 marker              */
+
+/* new implementation 20180109 */
+static int added_to_queue;
+static int total_mutant;
+/**/
 
 static struct queue_entry*
   top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
@@ -816,6 +824,22 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   if (queue_top) {
 
     queue_top->next = q;
+
+    /*add parent to newly formed queue entry*/
+    added_to_queue ++;
+    q->parent = queue_cur;
+    if(queue_cur != NULL){
+      queue_cur->pheromone ++;
+    }
+    struct queue_entry *target;
+    int pheromone = added_to_queue;
+    for(target = queue_cur; target != NULL; ){
+      target->pheromone += pheromone;
+      target = target->parent;
+      pheromone = pheromone * 0.8;
+    }
+    /**/
+
     queue_top = q;
 
   } else q_prev100 = queue = queue_top = q;
@@ -4697,6 +4721,9 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   queued_discovered += save_if_interesting(argv, out_buf, len, fault);
 
+  /*new implementation 20180109*/
+  total_mutant++;
+
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
 
@@ -8246,7 +8273,16 @@ int main(int argc, char** argv) {
 
     queue_cur = queue_cur->next;
     current_entry++;
-
+    /*new implementation 20180109*/
+    struct queue_entry *target;
+    int pheromone = added_to_queue;
+    for(target = queue_cur; target != NULL; ){
+      target->pheromone += pheromone;
+      target = target->parent;
+      pheromone = pheromone * 0.8;
+    }
+    added_to_queue = 0;
+    total_mutant = 0;
   }
 
   if (queue_cur) show_stats();
