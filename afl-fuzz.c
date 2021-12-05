@@ -258,9 +258,11 @@ struct queue_entry {
   u32 tc_ref;                         /* Trace bytes ref count            */
 
   double distance;                    /* Distance to targets              */
+  double pheromone;                   /* Pheromone level                  */
 
   struct queue_entry *next,           /* Next element, if any             */
                      *next_100;       /* 100 elements ahead               */
+                     *parent;         /* Parent of current test           */
 
 };
 
@@ -798,6 +800,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->len          = len;
   q->depth        = cur_depth + 1;
   q->passed_det   = passed_det;
+  q->parent       = queue_cur;
+  q->pheromone = q->distance;
 
   q->distance = cur_distance;
   if (cur_distance > 0) {
@@ -5078,6 +5082,17 @@ static u8 fuzz_one(char** argv) {
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
+
+  queue_cur->pheromone *= 0.8;
+
+  double new_pheromone = 1;
+  
+  struct queue_entry* climb;
+  for( climb = queue_cur; climb ; ){
+    climb->pheromone += new_pheromone;
+    climb = climb->parent;
+    new_pheromone *= 0.8;
+  }
 
 #ifdef IGNORE_FINDS
 
