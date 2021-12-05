@@ -248,7 +248,8 @@ struct queue_entry {
       fs_redundant;                   /* Marked as redundant in the fs?   */
 
   u32 bitmap_size,                    /* Number of bits set in bitmap     */
-      exec_cksum;                     /* Checksum of the execution trace  */
+      exec_cksum,                     /* Checksum of the execution trace  */
+      num_interesting;                /* Number of interesting children   */
 
   u64 exec_us,                        /* Execution time (us)              */
       handicap,                       /* Number of queue cycles behind    */
@@ -258,9 +259,11 @@ struct queue_entry {
   u32 tc_ref;                         /* Trace bytes ref count            */
 
   double distance;                    /* Distance to targets              */
+  double pheromone;                   /* Pheromone of the seed            */
 
   struct queue_entry *next,           /* Next element, if any             */
-                     *next_100;       /* 100 elements ahead               */
+                     *next_100,       /* 100 elements ahead               */
+                     *parent;         /* Parent element                   */
 
 };
 
@@ -268,6 +271,7 @@ static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_cur, /* Current offset within the queue  */
                           *queue_top, /* Top of the list                  */
                           *q_prev100; /* Previous 100 marker              */
+
 
 static struct queue_entry*
   top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
@@ -799,6 +803,12 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->depth        = cur_depth + 1;
   q->passed_det   = passed_det;
 
+  q->parent          = queue_cur;
+  q->pheromone       = 1.0;
+  q->num_interesting = 0;
+
+  queue_cur->num_interesting++;  // count number of interesting children.
+
   q->distance = cur_distance;
   if (cur_distance > 0) {
 
@@ -816,6 +826,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   if (queue_top) {
 
     queue_top->next = q;
+
     queue_top = q;
 
   } else q_prev100 = queue = queue_top = q;
@@ -1324,6 +1335,34 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 }
 
+double update_pheromone(void) {
+  struct queue_entry* q;
+  const double PRM_EVAPORATE_RATE = 0.9;
+  const double PRM_MIN_CAP = 0.1;
+  const double PRM_MAX_CAP = 1.0;
+
+  int total_interestings = 0;
+  int queue_len = 0;
+
+  q = queue;
+  while (q) {
+    total_interestings += q->num_interesting;
+    queue_len++;
+    q = q->next;
+  }
+
+
+  double new_pheromone = queue_cur->pheromone * PRM_EVAPORATE_RATE * ((double)(queue_cur->num_interesting)) / ((double)total_interestings/queue_len);
+  
+  if(new_pheromone > PRM_MAX_CAP)
+    queue_cur->pheromone = PRM_MAX_CAP;
+  else if (new_pheromone < PRM_MIN_CAP)
+    queue_cur->pheromone = PRM_MIN_CAP;
+  else
+    queue_cur->pheromone = new_pheromone;
+
+  return ((double)(queue_cur->num_interesting)) / ((double)total_interestings/queue_len);
+}
 
 /* The second part of the mechanism discussed above is a routine that
    goes over top_rated[] entries, and then sequentially grabs winners for
@@ -4697,6 +4736,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   queued_discovered += save_if_interesting(argv, out_buf, len, fault);
 
+
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
 
@@ -4810,60 +4850,64 @@ static u32 calculate_score(struct queue_entry* q) {
 
   }
 
-  u64 cur_ms = get_cur_time();
-  u64 t = (cur_ms - start_time) / 1000;
-  double progress_to_tx = ((double) t) / ((double) t_x * 60.0);
+  // u64 cur_ms = get_cur_time();
+  // u64 t = (cur_ms - start_time) / 1000;
+  // double progress_to_tx = ((double) t) / ((double) t_x * 60.0);
 
-  double T;
+  // double T;
 
-  //TODO Substitute functions of exp and log with faster bitwise operations on integers
-  switch (cooling_schedule) {
-    case SAN_EXP:
+  // //TODO Substitute functions of exp and log with faster bitwise operations on integers
+  // switch (cooling_schedule) {
+  //   case SAN_EXP:
 
-      T = 1.0 / pow(20.0, progress_to_tx);
+  //     T = 1.0 / pow(20.0, progress_to_tx);
 
-      break;
+  //     break;
 
-    case SAN_LOG:
+  //   case SAN_LOG:
 
-      // alpha = 2 and exp(19/2) - 1 = 13358.7268297
-      T = 1.0 / (1.0 + 2.0 * log(1.0 + progress_to_tx * 13358.7268297));
+  //     // alpha = 2 and exp(19/2) - 1 = 13358.7268297
+  //     T = 1.0 / (1.0 + 2.0 * log(1.0 + progress_to_tx * 13358.7268297));
 
-      break;
+  //     break;
 
-    case SAN_LIN:
+  //   case SAN_LIN:
 
-      T = 1.0 / (1.0 + 19.0 * progress_to_tx);
+  //     T = 1.0 / (1.0 + 19.0 * progress_to_tx);
 
-      break;
+  //     break;
 
-    case SAN_QUAD:
+  //   case SAN_QUAD:
 
-      T = 1.0 / (1.0 + 19.0 * pow(progress_to_tx, 2));
+  //     T = 1.0 / (1.0 + 19.0 * pow(progress_to_tx, 2));
 
-      break;
+  //     break;
 
-    default:
-      PFATAL ("Unkown Power Schedule for Directed Fuzzing");
-  }
+  //   default:
+  //     PFATAL ("Unkown Power Schedule for Directed Fuzzing");
+  // }
 
-  double power_factor = 1.0;
-  if (q->distance > 0) {
+  // double power_factor = 1.0;
+  // if (q->distance > 0) {
 
-    double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
-    if (max_distance != min_distance)
-      normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
+  //   double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
+  //   if (max_distance != min_distance)
+  //     normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
 
-    if (normalized_d >= 0) {
+  //   if (normalized_d >= 0) {
 
-        double p = (1.0 - normalized_d) * (1.0 - T) + 0.5 * T;
-        power_factor = pow(2.0, 2.0 * (double) log2(MAX_FACTOR) * (p - 0.5));
+  //       double p = (1.0 - normalized_d) * (1.0 - T) + 0.5 * T;
+  //       power_factor = pow(2.0, 2.0 * (double) log2(MAX_FACTOR) * (p - 0.5));
 
-    }// else WARNF ("Normalized distance negative: %f", normalized_d);
+  //   }// else WARNF ("Normalized distance negative: %f", normalized_d);
 
-  }
+  // }
 
-  perf_score *= power_factor;
+  // perf_score *= power_factor;
+
+  /* Use pheromone instead of Simulated Annealing */
+
+  perf_score *= q->pheromone;
 
   /* Make sure that we don't go over limit. */
 
@@ -5078,6 +5122,8 @@ static u8 fuzz_one(char** argv) {
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
+
+
 
 #ifdef IGNORE_FINDS
 
@@ -8233,6 +8279,22 @@ int main(int argc, char** argv) {
 
     skipped_fuzz = fuzz_one(use_argv);
 
+    // apply num_interesting to pheromone, and initialize num_interesting to 0
+
+    double pheromone_change = update_pheromone();
+
+    /*new implementation 20180109*/
+    struct queue_entry *q;
+    for(q = queue_cur->parent; q != NULL; ){
+      pheromone_change *= 0.8;
+      if(pheromone_change > 1)
+        q->pheromone *= pheromone_change;
+      q = q->parent;
+    }
+    queue_cur->num_interesting = 0;
+
+
+
     if (!stop_soon && sync_id && !skipped_fuzz) {
       
       if (!(sync_interval_cnt++ % SYNC_INTERVAL))
@@ -8246,7 +8308,7 @@ int main(int argc, char** argv) {
 
     queue_cur = queue_cur->next;
     current_entry++;
-
+    
   }
 
   if (queue_cur) show_stats();
