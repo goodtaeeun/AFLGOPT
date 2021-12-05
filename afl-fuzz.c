@@ -1324,6 +1324,29 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 }
 
+void calculate_pheromone(void) {
+  struct queue_entry* q;
+  const double PRM_EVAPORATE_RATE = 0.9;
+  const double PRM_MIN_CAP = 0.1;
+  const double PRM_MAX_CAP = 1.0;
+
+  int total_interestings = 0;
+
+  q = queue;
+  while (q) {
+    total_interestings += q->interesting_num;
+    q = q->next;
+  }
+
+  q = queue;
+  while (q) {
+    double prm = q->pheromone * PRM_EVAPORATE_RATE + ((double)(q->interesting_num)) / ((double)total_interestings);
+    if (prm > PRM_MAX_CAP) prm = PRM_MAX_CAP;
+    if (prm < PRM_MIN_CAP) prm = PRM_MIN_CAP;
+    q->pheromone = prm;
+    q = q->next;
+  }
+}
 
 /* The second part of the mechanism discussed above is a routine that
    goes over top_rated[] entries, and then sequentially grabs winners for
