@@ -807,7 +807,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->pheromone       = 1.0;
   q->num_interesting = 0;
 
-  queue_cur->num_interesting++;  // count number of interesting children.
+  if(queue_cur)
+    queue_cur->num_interesting++;  // count number of interesting children.
 
   q->distance = cur_distance;
   if (cur_distance > 0) {
