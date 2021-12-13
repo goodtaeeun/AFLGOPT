@@ -272,6 +272,9 @@ static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_top, /* Top of the list                  */
                           *q_prev100; /* Previous 100 marker              */
 
+static u32 total_interesting = 0;
+static u32 queue_len = 0;
+
 static struct queue_entry*
   top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
 
@@ -805,8 +808,13 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->parent          = queue_cur;
   q->pheromone       = 1.0;
   q->num_interesting = 0;
-  queue_cur->num_interesting++;  // count number of interesting children.
 
+  if(queue_cur){
+    queue_cur->num_interesting++;  // count number of interesting children.
+    total_interesting++;
+  }
+  queue_len ++;
+  
   q->distance = cur_distance;
   if (cur_distance > 0) {
 
@@ -824,6 +832,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   if (queue_top) {
 
     queue_top->next = q;
+
     queue_top = q;
 
   } else q_prev100 = queue = queue_top = q;
@@ -1332,6 +1341,34 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 }
 
+double update_pheromone(void) {
+  struct queue_entry* q;
+  const double PRM_EVAPORATE_RATE = 0.9;
+  const double PRM_MIN_CAP = 0.1;
+  const double PRM_MAX_CAP = 1.0;
+
+  // int total_interestings = 0;
+  // int queue_len = 0;
+
+  // q = queue;
+  // while (q) {
+  //   total_interestings += q->num_interesting;
+  //   queue_len++;
+  //   q = q->next;
+  // }
+
+
+  double new_pheromone = queue_cur->pheromone * PRM_EVAPORATE_RATE * ((double)(queue_cur->num_interesting)) / ((double)total_interesting/queue_len);
+  
+  if(new_pheromone > PRM_MAX_CAP)
+    queue_cur->pheromone = PRM_MAX_CAP;
+  else if (new_pheromone < PRM_MIN_CAP)
+    queue_cur->pheromone = PRM_MIN_CAP;
+  else
+    queue_cur->pheromone = new_pheromone;
+
+  return ((double)(queue_cur->num_interesting)) / ((double)total_interesting/queue_len);
+}
 
 /* The second part of the mechanism discussed above is a routine that
    goes over top_rated[] entries, and then sequentially grabs winners for
@@ -4819,9 +4856,9 @@ static u32 calculate_score(struct queue_entry* q) {
 
   }
 
-  u64 cur_ms = get_cur_time();
-  u64 t = (cur_ms - start_time) / 1000;
-  double progress_to_tx = ((double) t) / ((double) t_x * 60.0);
+  // u64 cur_ms = get_cur_time();
+  // u64 t = (cur_ms - start_time) / 1000;
+  // double progress_to_tx = ((double) t) / ((double) t_x * 60.0);
 
   // double T;
 
@@ -4856,23 +4893,25 @@ static u32 calculate_score(struct queue_entry* q) {
   //     PFATAL ("Unkown Power Schedule for Directed Fuzzing");
   // }
 
-  // double power_factor = 1.0;
-  // if (q->distance > 0) {
+  double importance = 1.0;
+  if (q->distance > 0) {
 
-  //   double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
-  //   if (max_distance != min_distance)
-  //     normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
+    double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
+    if (max_distance != min_distance)
+      normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
 
-  //   if (normalized_d >= 0) {
+    if (normalized_d >= 0) {
 
-  //       double p = (1.0 - normalized_d) * (1.0 - T) + 0.5 * T;
-  //       power_factor = pow(2.0, 2.0 * (double) log2(MAX_FACTOR) * (p - 0.5));
+        // double p = (1.0 - normalized_d) * (1.0 - T) + 0.5 * T;
+        // power_factor = pow(2.0, 2.0 * (double) log2(MAX_FACTOR) * (p - 0.5));
 
-  //   }// else WARNF ("Normalized distance negative: %f", normalized_d);
+        importance = 2 / (1 + normalized_d);
 
-  // }
+    }// else WARNF ("Normalized distance negative: %f", normalized_d);
 
-  // perf_score *= power_factor;
+  }
+
+  perf_score *= importance;
 
   /* Use pheromone instead of Simulated Annealing */
 
@@ -5092,9 +5131,7 @@ static u8 fuzz_one(char** argv) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
-  // apply num_interesting to pheromone, and initialize num_interesting to 0
-  queue_cur->pheromone = calculatePheromone(queue_cur->num_interesting);
-  queue_cur->num_interesting = 0;
+
 
 #ifdef IGNORE_FINDS
 
@@ -8250,6 +8287,23 @@ int main(int argc, char** argv) {
 
     skipped_fuzz = fuzz_one(use_argv);
 
+    // apply num_interesting to pheromone, and initialize num_interesting to 0
+
+    double pheromone_change = update_pheromone();
+
+    /*new implementation 20180109*/
+    struct queue_entry *q;
+    for(q = queue_cur->parent; q != NULL; ){
+      pheromone_change *= 0.8;
+      if(pheromone_change > 1)
+        q->pheromone *= pheromone_change;
+      q = q->parent;
+    }
+    total_interesting -= queue_cur->num_interesting;
+    queue_cur->num_interesting = 0;
+
+
+
     if (!stop_soon && sync_id && !skipped_fuzz) {
       
       if (!(sync_interval_cnt++ % SYNC_INTERVAL))
@@ -8263,7 +8317,7 @@ int main(int argc, char** argv) {
 
     queue_cur = queue_cur->next;
     current_entry++;
-
+    
   }
 
   if (queue_cur) show_stats();
