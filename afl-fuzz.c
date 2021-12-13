@@ -4902,28 +4902,22 @@ static u32 calculate_score(struct queue_entry* q) {
   double importance = 1.0;
   if (q->distance > 0) {
 
+    double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
+    if (max_distance != min_distance)
+      normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
 
-  //   double normalized_d = 0; // when "max_distance == min_distance", we set the normalized_d to 0 so that we can sufficiently explore those testcases whose distance >= 0.
-  //   if (max_distance != min_distance)
-  //     normalized_d = (q->distance - min_distance) / (max_distance - min_distance);
-
-  //   if (normalized_d >= 0) {
-
+    if (normalized_d >= 0) {
 
         // double p = (1.0 - normalized_d) * (1.0 - T) + 0.5 * T;
         // power_factor = pow(2.0, 2.0 * (double) log2(MAX_FACTOR) * (p - 0.5));
 
         importance = 2 / (1 + normalized_d);
 
+    }// else WARNF ("Normalized distance negative: %f", normalized_d);
 
-  //   }// else WARNF ("Normalized distance negative: %f", normalized_d);
-
-  // }
-
-  // perf_score *= power_factor;
+  }
 
   perf_score *= importance;
-
 
   /* Use pheromone instead of Simulated Annealing */
 
@@ -8311,9 +8305,7 @@ int main(int argc, char** argv) {
         q->pheromone *= pheromone_change;
       q = q->parent;
     }
-
     total_interesting -= queue_cur->num_interesting;
-
     queue_cur->num_interesting = 0;
 
 
