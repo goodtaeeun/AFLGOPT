@@ -8300,7 +8300,7 @@ int main(int argc, char** argv) {
     /*new implementation 20180109*/
     struct queue_entry *q;
     for(q = queue_cur->parent; q != NULL; ){
-      pheromone_change *= 0.9;
+      pheromone_change *= 0.95;
       if(pheromone_change > 1)
         q->pheromone *= pheromone_change;
       q = q->parent;
