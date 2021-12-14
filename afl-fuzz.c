@@ -808,7 +808,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->passed_det   = passed_det;
 
   q->parent          = queue_cur;
-  q->pheromone       = 1.0;
+  q->pheromone       = 0.8;
   q->num_interesting = 0;
 
 
