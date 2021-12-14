@@ -1346,7 +1346,7 @@ static void update_bitmap_score(struct queue_entry* q) {
 
 double update_pheromone(void) {
   struct queue_entry* q;
-  const double PRM_EVAPORATE_RATE = 0.9;
+  const double PRM_EVAPORATE_RATE = 0.8;
   const double PRM_MIN_CAP = 0.1;
   const double PRM_MAX_CAP = 1.0;
 
@@ -8300,7 +8300,7 @@ int main(int argc, char** argv) {
     /*new implementation 20180109*/
     struct queue_entry *q;
     for(q = queue_cur->parent; q != NULL; ){
-      pheromone_change *= 0.95;
+      pheromone_change *= 0.8;
       if(pheromone_change > 1)
         q->pheromone *= pheromone_change;
       q = q->parent;
