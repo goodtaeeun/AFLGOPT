@@ -808,7 +808,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->passed_det   = passed_det;
 
   q->parent          = queue_cur;
-  q->pheromone       = 0.8;
+  q->pheromone       = 1.0;
   q->num_interesting = 0;
 
 
@@ -8300,7 +8300,7 @@ int main(int argc, char** argv) {
     /*new implementation 20180109*/
     struct queue_entry *q;
     for(q = queue_cur->parent; q != NULL; ){
-      pheromone_change *= 0.8;
+      pheromone_change *= 0.9;
       if(pheromone_change > 1)
         q->pheromone *= pheromone_change;
       q = q->parent;
